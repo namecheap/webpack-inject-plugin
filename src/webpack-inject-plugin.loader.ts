@@ -1,10 +1,12 @@
-import loaderUtils from 'loader-utils';
-import { loader } from 'webpack';
-import { registry, Loader } from './main';
+import type { LoaderDefinition } from 'webpack';
+import { registry, type Loader } from './main';
 
-const injectLoader: loader.Loader = function(source: string | Buffer) {
-  const options = loaderUtils.getOptions(this);
+type LoaderOptions = {
+  id: string;
+};
 
+const injectLoader: LoaderDefinition<LoaderOptions> = function (source: string | Buffer) {
+  const options = this.getOptions();
   let func: Loader = () => '';
   if (registry[options.id]) {
     func = registry[options.id];
