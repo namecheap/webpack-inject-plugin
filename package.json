@@ -29,6 +29,9 @@
   "bugs": {
     "url": "https://github.com/namecheap/webpack-inject-plugin/issues"
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "homepage": "https://github.com/namecheap/webpack-inject-plugin#readme",
   "peerDependencies": {
     "webpack": ">=5.0.0"
