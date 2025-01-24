@@ -1,14 +1,13 @@
-import { randomBytes } from 'crypto';
 import path from 'path';
-import { Compiler, Entry, EntryFunc } from 'webpack';
+import type { Compiler, Entry, EntryNormalized, EntryObject, WebpackPluginInstance } from 'webpack';
 
-type EntryType = string | string[] | Entry | EntryFunc;
+type EntryType = string | string[] | Entry | (() => Promise<EntryType>);
 type EntryFilterFunction = (entryName: string) => boolean;
 type EntryFilterType = string | EntryFilterFunction;
 
 const FAKE_LOADER_NAME = 'webpack-inject-plugin.loader';
 
-export type Loader = () => string;
+export type Loader = (source: string | Buffer) => string | Promise<string>;
 
 export const registry: {
   [key: string]: Loader;
@@ -24,7 +23,7 @@ function getUniqueID() {
 export enum ENTRY_ORDER {
   First = 1,
   Last,
-  NotLast
+  NotLast,
 }
 
 export interface IInjectOptions {
@@ -33,11 +32,7 @@ export interface IInjectOptions {
   loaderID?: string;
 }
 
-function injectToArray(
-  originalEntry: string[],
-  newEntry: string,
-  entryOrder = ENTRY_ORDER.NotLast
-): string[] {
+function injectToArray(originalEntry: string[], newEntry: string, entryOrder = ENTRY_ORDER.NotLast): string[] {
   if (entryOrder === ENTRY_ORDER.First) {
     return [newEntry, ...originalEntry];
   }
@@ -49,13 +44,11 @@ function injectToArray(
   return [
     ...originalEntry.splice(0, originalEntry.length - 1),
     newEntry,
-    ...originalEntry.splice(originalEntry.length - 1)
+    ...originalEntry.splice(originalEntry.length - 1),
   ];
 }
 
-function createEntryFilter(
-  filterOption?: EntryFilterType
-): EntryFilterFunction {
+function createEntryFilter(filterOption?: EntryFilterType): EntryFilterFunction {
   if (filterOption === null || filterOption === undefined) {
     return () => true;
   }
@@ -74,7 +67,7 @@ function createEntryFilter(
 export function injectEntry(
   originalEntry: EntryType | undefined,
   newEntry: string,
-  options: IInjectOptions
+  options: IInjectOptions,
 ): EntryType {
   if (originalEntry === undefined) {
     return newEntry;
@@ -101,31 +94,27 @@ export function injectEntry(
 
       // Safe type-cast here because callbackOriginEntry cannot be an EntryFunc,
       // so the injectEntry call won't return one either.
-      return injectEntry(callbackOriginEntry, newEntry, options) as Exclude<EntryType, EntryFunc>
+      return injectEntry(callbackOriginEntry, newEntry, options);
     };
   }
 
   if (Object.prototype.toString.call(originalEntry).slice(8, -1) === 'Object') {
-    return Object.entries(originalEntry).reduce(
-      (a: Record<string, EntryType>, [key, entry]) => {
-        if (filterFunc(key)) {
-          a[key] = injectEntry(entry, newEntry, options);
-        } else {
-          a[key] = entry;
-        }
+    return Object.entries(originalEntry).reduce((a: Record<string, Entry>, [key, entry]) => {
+      if (filterFunc(key) || key === 'import') {
+        a[key] = injectEntry(entry as string | string[], newEntry, options) as string | string[];
+      } else {
+        a[key] = entry as string | string[];
+      }
 
-        return a;
-      },
-      {}
-    );
+      return a;
+    }, {}) as EntryObject;
   }
 
   return originalEntry;
 }
 
-export default class WebpackInjectPlugin {
+export class WebpackInjectPlugin implements WebpackPluginInstance {
   private readonly options: IInjectOptions;
-
   private readonly loader: Loader;
 
   constructor(loader: Loader, options?: IInjectOptions) {
@@ -133,20 +122,19 @@ export default class WebpackInjectPlugin {
     this.options = {
       entryName: (options && options.entryName) || undefined,
       entryOrder: (options && options.entryOrder) || ENTRY_ORDER.NotLast,
-      loaderID: (options && options.loaderID) || getUniqueID()
+      loaderID: (options && options.loaderID) || getUniqueID(),
     };
   }
 
   apply(compiler: Compiler) {
     const id = this.options.loaderID!;
     const newEntry = path.resolve(__dirname, `${FAKE_LOADER_NAME}?id=${id}!`);
-
     registry[id] = this.loader;
-
     compiler.options.entry = injectEntry(
-      compiler.options.entry,
+      compiler.options.entry as EntryObject,
       newEntry,
-      this.options
-    );
+      this.options,
+    ) as EntryNormalized;
+    compiler.options.resolveLoader.extensions = ['.ts', '.js'];
   }
 }

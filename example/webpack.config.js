@@ -1,10 +1,10 @@
-const InjectPlugin = require('..').default;
+const { WebpackInjectPlugin } = require('..');
 
 module.exports = {
   entry: './entry.js',
   mode: 'development',
   plugins: [
-    new InjectPlugin(() => `console.log('hello world');`),
-    new InjectPlugin(() => `console.log('second injected code');`)
-  ]
+    new WebpackInjectPlugin(() => `console.log('hello world');`),
+    new WebpackInjectPlugin(() => `console.log('second injected code');`),
+  ],
 };
